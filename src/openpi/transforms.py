@@ -1,7 +1,7 @@
 from collections.abc import Callable, Mapping, Sequence
 import dataclasses
 import re
-from typing import Protocol, TypeAlias, TypeVar, runtime_checkable
+from typing import Protocol, TypeAlias, TypeVar, Any, runtime_checkable
 
 import flax.traverse_util as traverse_util
 import jax
@@ -311,15 +311,46 @@ class PromptFromLeRobotTask(DataTransformFn):
     """Extracts a prompt from the current LeRobot dataset task."""
 
     # Contains the LeRobot dataset tasks (dataset.meta.tasks).
-    tasks: dict[int, str]
+    # In practice this can be a dict or a pandas.DataFrame
+    tasks: Any
 
     def __call__(self, data: DataDict) -> DataDict:
         if "task_index" not in data:
             raise ValueError('Cannot extract prompt without "task_index"')
 
         task_index = int(data["task_index"])
-        if (prompt := self.tasks.get(task_index)) is None:
-            raise ValueError(f"{task_index=} not found in task mapping: {self.tasks}")
+
+        # LerobotDataset v2: dict[int, str]
+        if isinstance(self.tasks, dict):
+            prompt = self.tasks.get(task_index)
+            if prompt is None:
+                raise ValueError(f"{task_index=} not found in task mapping: {self.tasks}")
+            return {**data, "prompt": prompt}
+        
+        # LerobotDataset v3: pandas.DataFrame
+        # tasks.parquet -> DataFrame with e.g.:
+        #   index: prompt (string)
+        #   column: 'task_index' (int)
+        if hasattr(self.tasks, "columns") and "task_index" in getattr(self.tasks, "columns", []):
+            # Lazy import to avoid hard dependency in non-LeRobot contexts
+            import pandas as pd  # noqa: F401
+
+            # Find row(s) whose task_index matches the sample
+            rows = self.tasks[self.tasks["task_index"] == task_index]
+            if rows.empty:
+                raise ValueError(f"{task_index=} not found in task mapping:\n{self.tasks}")
+
+            # The index of the row is the prompt string
+            prompt = str(rows.index[0])
+            return {**data, "prompt": prompt}
+
+        # Fallback: list-like or unknown type
+        try:
+            prompt = self.tasks[task_index]
+        except Exception as e:
+            raise ValueError(
+                f"Unsupported type for tasks={type(self.tasks)}; cannot extract prompt for {task_index=}"
+            ) from e
 
         return {**data, "prompt": prompt}
 
