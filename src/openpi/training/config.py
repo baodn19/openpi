@@ -20,6 +20,7 @@ import openpi.models.tokenizer as _tokenizer
 import openpi.policies.aloha_policy as aloha_policy
 import openpi.policies.droid_policy as droid_policy
 import openpi.policies.libero_policy as libero_policy
+import openpi.policies.biso101_policy as bio101_policy
 import openpi.shared.download as _download
 import openpi.shared.normalize as _normalize
 import openpi.training.droid_rlds_dataset as droid_rlds_dataset
@@ -351,6 +352,55 @@ class LeRobotLiberoDataConfig(DataConfigFactory):
             repack_transforms=repack_transform,
             data_transforms=data_transforms,
             model_transforms=model_transforms,
+        )
+
+@dataclasses.dataclass(frozen=True)
+class LeRobotBiSO101DataConfig(DataConfigFactory):
+    # If True, convert joint dimensions to deltas before normalization & model input.
+    # Grippers stay absolute (0–100).
+    use_delta_transform: bool = True
+
+    # Action keys that will be used to read the action sequence from the dataset.
+    action_sequence_keys: Sequence[str] = ("action",)
+
+    @override
+    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        repack_transform = _transforms.Group(
+            inputs=[
+                _transforms.RepackTransform(
+                    {
+                        "image/head": "observation.images.head",
+                        "image/left_wrist": "observation.images.left_wrist",
+                        "image/right_wrist": "observation.images.right_wrist",
+                        "state": "observation.state",
+                        "actions": "action",
+                        "prompt": "task",
+                    }
+                )
+            ]
+        )
+
+        data_transforms = _transforms.Group(
+            inputs=[bio101_policy.BiSo101Inputs(model_type=model_config.model_type)],
+            outputs=[bio101_policy.BiSo101Outputs()],
+        )
+
+        if self.use_delta_transform:
+            # True for the 1-5 and 7-11 joint dims, False for the 2 gripper dims.
+            delta_action_mask = _transforms.make_bool_mask(5, -1, 5, -1)
+            data_transforms = data_transforms.push(
+                inputs=[_transforms.DeltaActions(delta_action_mask)],
+                outputs=[_transforms.AbsoluteActions(delta_action_mask)],
+            )
+        
+        model_transforms = ModelTransformFactory()(model_config)
+
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs, model_config),
+            repack_transforms=repack_transform,
+            data_transforms=data_transforms,
+            model_transforms=model_transforms,
+            action_sequence_keys=self.action_sequence_keys,
         )
 
 
@@ -752,6 +802,38 @@ _CONFIGS = [
         pytorch_weight_path="/path/to/your/pytorch_weight_path",
         num_train_steps=30_000,
     ),
+
+    #
+    # LoRA Fine-tuning Bimanual-SO101 configs.
+    #
+    TrainConfig(
+        name="pi05_bimanual_so101_lora",
+        model=pi0_config.Pi0Config(
+            pi05=True, action_dim=32, action_horizon=50, paligemma_variant="gemma_2b_lora"),
+        data=LeRobotBiSO101DataConfig(
+            repo_id="xuweiwu/bimanual-toy-box-cleanup",
+            base_config=DataConfig(prompt_from_task=True),
+            use_delta_transform=True,
+        ),
+        batch_size=32,
+        freeze_filter=pi0_config.Pi0Config(
+            pi05=True, action_dim=32, action_horizon=50, paligemma_variant="gemma_2b_lora"
+        ).get_freeze_filter(),
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1_000,
+            peak_lr=2.5e-5,
+            decay_steps=30_000,
+            decay_lr=2.5e-6,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        # Turn off EMA for LoRA finetuning.
+        ema_decay=None,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=30_000,
+        num_workers=12,
+        wandb_enabled=False,
+    ),
+
     #
     # Fine-tuning Aloha configs.
     #
@@ -907,6 +989,7 @@ _CONFIGS = [
         num_train_steps=20_000,
         batch_size=32,
     ),
+    
     #
     # ALOHA Sim configs. This config is used to demonstrate how to train on a simple simulated environment.
     #
@@ -955,6 +1038,60 @@ _CONFIGS = [
         overwrite=True,
         exp_name="debug_pi05",
         wandb_enabled=False,
+    ),
+    TrainConfig(
+        name="debug_pi05_bimanual_so101_lora",
+        model=pi0_config.Pi0Config(
+            pi05=True, action_dim=32, action_horizon=50, paligemma_variant="gemma_2b_lora"),
+        data=LeRobotBiSO101DataConfig(
+            repo_id="xuweiwu/bimanual-toy-box-cleanup",
+            base_config=DataConfig(prompt_from_task=True),
+            use_delta_transform=True,
+        ),
+        batch_size=16,
+        freeze_filter=pi0_config.Pi0Config(
+            pi05=True, action_dim=32, action_horizon=50, paligemma_variant="gemma_2b_lora"
+        ).get_freeze_filter(),
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1_000,
+            peak_lr=2.5e-5,
+            decay_steps=30_000,
+            decay_lr=2.5e-6,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        # Turn off EMA for LoRA finetuning.
+        ema_decay=None,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=10,
+        num_workers=12,
+        wandb_enabled=False,
+    ),
+    TrainConfig(
+        name="debug_bs32_pi05_bimanual_so101_lora",
+        model=pi0_config.Pi0Config(
+            pi05=True, action_dim=32, action_horizon=50, paligemma_variant="gemma_2b_lora"),
+        data=LeRobotBiSO101DataConfig(
+            repo_id="xuweiwu/bimanual-toy-box-cleanup",
+            base_config=DataConfig(prompt_from_task=True),
+            use_delta_transform=True,
+        ),
+        batch_size=32,
+        freeze_filter=pi0_config.Pi0Config(
+            pi05=True, action_dim=32, action_horizon=50, paligemma_variant="gemma_2b_lora"
+        ).get_freeze_filter(),
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1_000,
+            peak_lr=2.5e-5,
+            decay_steps=30_000,
+            decay_lr=2.5e-6,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        # Turn off EMA for LoRA finetuning.
+        ema_decay=None,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=10,
+        num_workers=12,
+        wandb_enabled=True,
     ),
     #
     # RoboArena configs.
