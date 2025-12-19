@@ -24,6 +24,7 @@ import openpi.policies.biso101_policy as bio101_policy
 import openpi.shared.download as _download
 import openpi.shared.normalize as _normalize
 import openpi.training.droid_rlds_dataset as droid_rlds_dataset
+import openpi.training.misc.polaris_config as polaris_config
 import openpi.training.misc.roboarena_config as roboarena_config
 import openpi.training.optimizer as _optimizer
 import openpi.training.weight_loaders as weight_loaders
@@ -94,8 +95,8 @@ class DataConfig:
     rlds_data_dir: str | None = None
     # Action space for DROID dataset.
     action_space: droid_rlds_dataset.DroidActionSpace | None = None
-    # Path to the data filter file for DROID dataset
-    filter_dict_path: str | None = None
+    # List of datasets to sample from: name, version, weight, and optionally filter_dict_path
+    datasets: Sequence[droid_rlds_dataset.RLDSDataset] = ()
 
 
 class GroupFactory(Protocol):
@@ -416,8 +417,16 @@ class RLDSDroidDataConfig(DataConfigFactory):
     # Filtering options. Can pass a path to a dictionary that maps episodes to timestep ranges
     # to tuples denoting ranges of time steps to keep (start, end). Episodes are uniquely identified with
     # f"{recording_folderpath}--{file_path}", both of which are present in the RLDS episode metadata.
-    # Path to the filter dictionary file.
-    filter_dict_path: str | None = "gs://openpi-assets/droid/droid_sample_ranges_v1_0_1.json"
+
+    # List of datasets to sample from: name, version, weight, and optionally filter_dict_path
+    datasets: Sequence[droid_rlds_dataset.RLDSDataset] = (
+        droid_rlds_dataset.RLDSDataset(
+            name="droid",
+            version="1.0.1",
+            weight=1.0,
+            filter_dict_path="gs://openpi-assets/droid/droid_sample_ranges_v1_0_1.json",
+        ),
+    )
 
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
@@ -460,7 +469,7 @@ class RLDSDroidDataConfig(DataConfigFactory):
             model_transforms=model_transforms,
             rlds_data_dir=self.rlds_data_dir,
             action_space=self.action_space,
-            filter_dict_path=self.filter_dict_path,
+            datasets=self.datasets,
         )
 
 
@@ -802,38 +811,6 @@ _CONFIGS = [
         pytorch_weight_path="/path/to/your/pytorch_weight_path",
         num_train_steps=30_000,
     ),
-
-    #
-    # LoRA Fine-tuning Bimanual-SO101 configs.
-    #
-    TrainConfig(
-        name="pi05_bimanual_so101_lora",
-        model=pi0_config.Pi0Config(
-            pi05=True, action_dim=32, action_horizon=50, paligemma_variant="gemma_2b_lora"),
-        data=LeRobotBiSO101DataConfig(
-            repo_id="xuweiwu/bimanual-toy-box-cleanup",
-            base_config=DataConfig(prompt_from_task=True),
-            use_delta_transform=True,
-        ),
-        batch_size=32,
-        freeze_filter=pi0_config.Pi0Config(
-            pi05=True, action_dim=32, action_horizon=50, paligemma_variant="gemma_2b_lora"
-        ).get_freeze_filter(),
-        lr_schedule=_optimizer.CosineDecaySchedule(
-            warmup_steps=1_000,
-            peak_lr=2.5e-5,
-            decay_steps=30_000,
-            decay_lr=2.5e-6,
-        ),
-        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
-        # Turn off EMA for LoRA finetuning.
-        ema_decay=None,
-        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
-        num_train_steps=20_000,
-        num_workers=12,
-        wandb_enabled=True,
-    ),
-
     #
     # Fine-tuning Aloha configs.
     #
@@ -1039,6 +1016,41 @@ _CONFIGS = [
         exp_name="debug_pi05",
         wandb_enabled=False,
     ),
+    # RoboArena & PolaRiS configs.
+    *roboarena_config.get_roboarena_configs(),
+    *polaris_config.get_polaris_configs(),
+]
+_CONFIGS += [
+    #
+    # LoRA Fine-tuning Bimanual-SO101 configs.
+    #
+    TrainConfig(
+        name="pi05_bimanual_so101_lora",
+        model=pi0_config.Pi0Config(
+            pi05=True, action_dim=32, action_horizon=50, paligemma_variant="gemma_2b_lora"),
+        data=LeRobotBiSO101DataConfig(
+            repo_id="xuweiwu/bimanual-toy-box-cleanup",
+            base_config=DataConfig(prompt_from_task=True),
+            use_delta_transform=True,
+        ),
+        batch_size=32,
+        freeze_filter=pi0_config.Pi0Config(
+            pi05=True, action_dim=32, action_horizon=50, paligemma_variant="gemma_2b_lora"
+        ).get_freeze_filter(),
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1_000,
+            peak_lr=2.5e-5,
+            decay_steps=30_000,
+            decay_lr=2.5e-6,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        # Turn off EMA for LoRA finetuning.
+        ema_decay=None,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=20_000,
+        num_workers=12,
+        wandb_enabled=True,
+    ),
     TrainConfig(
         name="debug_pi05_bimanual_so101_lora",
         model=pi0_config.Pi0Config(
@@ -1093,10 +1105,6 @@ _CONFIGS = [
         num_workers=12,
         wandb_enabled=True,
     ),
-    #
-    # RoboArena configs.
-    #
-    *roboarena_config.get_roboarena_configs(),
 ]
 
 if len({config.name for config in _CONFIGS}) != len(_CONFIGS):
