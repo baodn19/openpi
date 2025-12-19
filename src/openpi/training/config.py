@@ -829,9 +829,9 @@ _CONFIGS = [
         # Turn off EMA for LoRA finetuning.
         ema_decay=None,
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
-        num_train_steps=30_000,
+        num_train_steps=20_000,
         num_workers=12,
-        wandb_enabled=False,
+        wandb_enabled=True,
     ),
 
     #

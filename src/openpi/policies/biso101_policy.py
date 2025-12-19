@@ -33,7 +33,6 @@ class BiSo101Inputs(transforms.DataTransformFn):
     model_type: _model.ModelType
 
     def __call__(self, data: dict) -> dict:
-        # Images -------------------------------------------------------------
         head = _parse_image(data["image/head"])
         left_wrist = _parse_image(data["image/left_wrist"])
         right_wrist = _parse_image(data["image/right_wrist"])
