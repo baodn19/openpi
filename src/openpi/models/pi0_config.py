@@ -106,3 +106,45 @@ class Pi0Config(_model.BaseModelConfig):
         if not filters:
             return nnx.Nothing
         return nnx.All(*filters)
+
+@dataclasses.dataclass(frozen=True)
+class XLeRobotPi05Config(Pi0Config):
+    # Set to 16 to match your info.json (6 per arm + 2 head + 2 wheels)
+    action_dim: int = 16 
+    
+    # Enable Pi0.5 features (adaRMSNorm and discrete state handling)
+    pi05: bool = True
+    
+    # Matches the chunk size logic in your info.json
+    action_horizon: int = 50 
+
+    @override
+    def inputs_spec(self, *, batch_size: int = 1) -> tuple[_model.Observation, _model.Actions]:
+        image_spec = jax.ShapeDtypeStruct([batch_size, *_model.IMAGE_RESOLUTION, 3], jnp.float32)
+        image_mask_spec = jax.ShapeDtypeStruct([batch_size], jnp.bool_)
+
+        with at.disable_typechecking():
+            observation_spec = _model.Observation(
+                # Change these names to match cam0, cam1, cam2 in your info.json
+                images={
+                    "cam0": image_spec,
+                    "cam1": image_spec,
+                    "cam2": image_spec,
+                },
+                image_masks={
+                    "cam0": image_mask_spec,
+                    "cam1": image_mask_spec,
+                    "cam2": image_mask_spec,
+                },
+                # Match the 16-DOF state dimension
+                state=jax.ShapeDtypeStruct([batch_size, 16], jnp.float32),
+                tokenized_prompt=jax.ShapeDtypeStruct([batch_size, self.max_token_len], jnp.int32),
+                tokenized_prompt_mask=jax.ShapeDtypeStruct([batch_size, self.max_token_len], bool),
+            )
+        action_spec = jax.ShapeDtypeStruct([batch_size, self.action_horizon, 16], jnp.float32)
+
+        return observation_spec, action_spec
+
+uv run python scripts/train.py pi05_xlerobot_so101_lora \
+    --exp-name xlerobot_kcup_lora \
+    --overwrite

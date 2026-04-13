@@ -69,10 +69,11 @@ class BiSo101Outputs(transforms.DataTransformFn):
     Map model outputs back into robot action format.
 
     The model outputs 'actions' with shape [action_horizon, action_dim].
-    Only the first 12 dims corresponding are needed for bimanual so101 joints.
+    Slice to the actual robot action dim (default 12 for original SO101, 16 for xlerobot).
     """
 
+    action_dim: int = 12
+
     def __call__(self, data: dict) -> dict:
-        # Slice to 12-dim actions, then you can send that directly to the robot.
-        actions = np.asarray(data["actions"])[:, :12]
+        actions = np.asarray(data["actions"])[:, :self.action_dim]
         return {"actions": actions}

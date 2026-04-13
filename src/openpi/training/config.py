@@ -364,15 +364,24 @@ class LeRobotBiSO101DataConfig(DataConfigFactory):
     # Action keys that will be used to read the action sequence from the dataset.
     action_sequence_keys: Sequence[str] = ("action",)
 
+    # Camera key mapping: model_key -> dataset_key
+    head_camera_key: str = "observation.images.head"
+    left_wrist_camera_key: str = "observation.images.left_wrist"
+    right_wrist_camera_key: str = "observation.images.right_wrist"
+
+    # Delta transform joint dims per arm (joints_per_arm, -1 for gripper, repeated for both arms).
+    # Default (5, -1, 5, -1) = 12-dim actions (5 joints + 1 gripper per arm).
+    delta_mask_dims: tuple[int, ...] = (5, -1, 5, -1)
+
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
         repack_transform = _transforms.Group(
             inputs=[
                 _transforms.RepackTransform(
                     {
-                        "image/head": "observation.images.head",
-                        "image/left_wrist": "observation.images.left_wrist",
-                        "image/right_wrist": "observation.images.right_wrist",
+                        "image/head": self.head_camera_key,
+                        "image/left_wrist": self.left_wrist_camera_key,
+                        "image/right_wrist": self.right_wrist_camera_key,
                         "state": "observation.state",
                         "actions": "action",
                         "prompt": "task",
@@ -387,8 +396,7 @@ class LeRobotBiSO101DataConfig(DataConfigFactory):
         )
 
         if self.use_delta_transform:
-            # True for the 1-5 and 7-11 joint dims, False for the 2 gripper dims.
-            delta_action_mask = _transforms.make_bool_mask(5, -1, 5, -1)
+            delta_action_mask = _transforms.make_bool_mask(*self.delta_mask_dims)
             data_transforms = data_transforms.push(
                 inputs=[_transforms.DeltaActions(delta_action_mask)],
                 outputs=[_transforms.AbsoluteActions(delta_action_mask)],
@@ -1049,6 +1057,36 @@ _CONFIGS += [
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
         num_train_steps=20_000,
         num_workers=12,
+        wandb_enabled=True,
+    ),
+    TrainConfig(
+        name="pi05_xlerobot_so101_lora",
+        model=pi0_config.Pi0Config(
+            pi05=True, action_dim=16, action_horizon=50, paligemma_variant="gemma_2b_lora"),
+        data=LeRobotBiSO101DataConfig(
+            repo_id="/home/era-agx-orin/ERA_Lab/xlerobot/tasks/pick_place_K_cup",
+            base_config=DataConfig(prompt_from_task=True),
+            use_delta_transform=True,
+            head_camera_key="observation.images.cam0",
+            left_wrist_camera_key="observation.images.cam1",
+            right_wrist_camera_key="observation.images.cam2",
+            delta_mask_dims=(7, -1, 7, -1),
+        ),
+        batch_size=8,
+        freeze_filter=pi0_config.Pi0Config(
+            pi05=True, action_dim=16, action_horizon=50, paligemma_variant="gemma_2b_lora"
+        ).get_freeze_filter(),
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1_000,
+            peak_lr=2e-5,
+            decay_steps=30_000,
+            decay_lr=2e-6,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=None,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=5_000,
+        num_workers=4,
         wandb_enabled=True,
     ),
     TrainConfig(
