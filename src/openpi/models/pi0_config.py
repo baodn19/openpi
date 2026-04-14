@@ -145,6 +145,3 @@ class XLeRobotPi05Config(Pi0Config):
 
         return observation_spec, action_spec
 
-uv run python scripts/train.py pi05_xlerobot_so101_lora \
-    --exp-name xlerobot_kcup_lora \
-    --overwrite
