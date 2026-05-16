@@ -110,7 +110,7 @@ class Pi0Config(_model.BaseModelConfig):
 @dataclasses.dataclass(frozen=True)
 class XLeRobotPi05Config(Pi0Config):
     # Set to 16 to match your info.json (6 per arm + 2 head + 2 wheels)
-    action_dim: int = 16 
+    action_dim: int = 32 
     
     # Enable Pi0.5 features (adaRMSNorm and discrete state handling)
     pi05: bool = True

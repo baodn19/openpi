@@ -1062,7 +1062,7 @@ _CONFIGS += [
     TrainConfig(
         name="pi05_xlerobot_so101_lora",
         model=pi0_config.Pi0Config(
-            pi05=True, action_dim=16, action_horizon=50, paligemma_variant="gemma_2b_lora"),
+            pi05=True, action_dim=32, action_horizon=50, paligemma_variant="gemma_2b_lora"),
         data=LeRobotBiSO101DataConfig(
             repo_id="/home/bao/ERA_Lab/tasks/pick_place_K_cup_pi05/",
             base_config=DataConfig(prompt_from_task=True),
@@ -1074,7 +1074,7 @@ _CONFIGS += [
         ),
         batch_size=8,
         freeze_filter=pi0_config.Pi0Config(
-            pi05=True, action_dim=16, action_horizon=50, paligemma_variant="gemma_2b_lora"
+            pi05=True, action_dim=32, action_horizon=50, paligemma_variant="gemma_2b_lora"
         ).get_freeze_filter(),
         lr_schedule=_optimizer.CosineDecaySchedule(
             warmup_steps=1_000,
