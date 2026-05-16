@@ -125,16 +125,15 @@ class XLeRobotPi05Config(Pi0Config):
 
         with at.disable_typechecking():
             observation_spec = _model.Observation(
-                # Change these names to match cam0, cam1, cam2 in your info.json
                 images={
-                    "cam0": image_spec,
-                    "cam1": image_spec,
-                    "cam2": image_spec,
+                    "head": image_spec,
+                    "left_wrist": image_spec,
+                    "right_wrist": image_spec,
                 },
                 image_masks={
-                    "cam0": image_mask_spec,
-                    "cam1": image_mask_spec,
-                    "cam2": image_mask_spec,
+                    "head": image_mask_spec,
+                    "left_wrist": image_mask_spec,
+                    "right_wrist": image_mask_spec,
                 },
                 # Match the 16-DOF state dimension
                 state=jax.ShapeDtypeStruct([batch_size, 16], jnp.float32),

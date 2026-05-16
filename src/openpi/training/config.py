@@ -1064,13 +1064,13 @@ _CONFIGS += [
         model=pi0_config.Pi0Config(
             pi05=True, action_dim=16, action_horizon=50, paligemma_variant="gemma_2b_lora"),
         data=LeRobotBiSO101DataConfig(
-            repo_id="/home/era-agx-orin/ERA_Lab/xlerobot/tasks/pick_place_K_cup",
+            repo_id="/home/bao/ERA_Lab/tasks/pick_place_K_cup_pi05/",
             base_config=DataConfig(prompt_from_task=True),
             use_delta_transform=True,
-            head_camera_key="observation.images.cam0",
-            left_wrist_camera_key="observation.images.cam1",
-            right_wrist_camera_key="observation.images.cam2",
-            delta_mask_dims=(7, -1, 7, -1),
+            head_camera_key="observation.images.head",
+            left_wrist_camera_key="observation.images.left_wrist",
+            right_wrist_camera_key="observation.images.right_wrist",
+            delta_mask_dims=(5, -1, 5, -1),
         ),
         batch_size=8,
         freeze_filter=pi0_config.Pi0Config(
